@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>White Paper Auto Stamping</title>
+  <title>Bordered Paper Auto Stamping</title>
   <style>
     :root { color-scheme: dark; --panel: rgba(0,0,0,.48); }
     * { box-sizing: border-box; }
@@ -34,7 +34,7 @@
   <canvas id="scene"></canvas>
   <div class="shade"></div>
   <div id="paperBox" aria-hidden="true"></div>
-  <div id="status">「カメラを開始」を押し、白い紙を画面内にかざしてください。</div>
+  <div id="status">「カメラを開始」を押し、黒い縁付きの白い紙を画面内にかざしてください。</div>
   <div id="progress"><div id="progressBar"></div></div>
   <div id="controls">
     <button id="startButton">カメラを開始</button>
@@ -44,6 +44,7 @@
   <div id="flash"></div>
   <canvas id="analysisCanvas" width="160" height="120" hidden></canvas>
   <canvas id="captureCanvas" hidden></canvas>
+
 
 <script>
 (() => {
@@ -64,19 +65,24 @@
   const flash = document.getElementById('flash');
 
   const CONFIG = {
-    stableSeconds: 1.8,
+    stableSeconds: 1.6,
     cooldownMs: 1800,
     analysisIntervalMs: 100,
-    minAreaRatio: 0.035,
-    maxAreaRatio: 0.82,
-    minFillRatio: 0.48,
-    minAspect: 0.42,
-    maxAspect: 2.35,
-    whiteBrightness: 168,
-    maxChroma: 62,
-    bboxStability: 0.075,
-    captureMaxSide: 520,
-    maxStamps: 30
+    minAreaRatio: 0.04,
+    maxAreaRatio: 0.84,
+    minAspect: 0.45,
+    maxAspect: 2.2,
+    darkBrightness: 78,
+    darkChromaMax: 80,
+    innerWhiteBrightness: 150,
+    maxInnerDarkRatio: 0.12,
+    minBorderDarkRatio: 0.24,
+    maxComponentFill: 0.42,
+    minComponentFill: 0.02,
+    bboxStability: 0.08,
+    captureMaxSide: 620,
+    maxStamps: 30,
+    defaultInsetRatio: 0.08
   };
 
   let stream = null, timer = null, stamps = [];
@@ -117,7 +123,7 @@
       stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
       video.srcObject=stream; await video.play();
       startButton.textContent='カメラ再起動'; captureButton.disabled=false;
-      status.textContent='白い紙を画面内にかざし、輪郭が表示されたら静止してください。';
+      status.textContent='黒い縁付きの白い紙を画面内にかざしてください。縁が認識されると輪郭が表示されます。';
       stableTime=0; detected=smoothed=previousStableBox=null; lastTick=performance.now();
       timer=setInterval(analyse,CONFIG.analysisIntervalMs);
     }catch(e){ console.error(e); status.textContent='カメラを開始できません。HTTPS環境とカメラ許可を確認してください。'; }
@@ -128,30 +134,96 @@
     if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
   }
 
-  function findLargestWhiteRegion(image){
-    const W=analysisCanvas.width,H=analysisCanvas.height,d=image.data;
+  function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+
+  function isDarkPixel(d, i){
+    const r=d[i], g=d[i+1], b=d[i+2];
+    const max=Math.max(r,g,b), min=Math.min(r,g,b), lum=.299*r+.587*g+.114*b;
+    return lum <= CONFIG.darkBrightness && (max-min) <= CONFIG.darkChromaMax;
+  }
+
+  function findBorderedPaper(image){
+    const W=analysisCanvas.width, H=analysisCanvas.height, d=image.data;
     const mask=new Uint8Array(W*H);
-    for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){
-      const i=(y*W+x)*4, r=d[i],g=d[i+1],b=d[i+2];
-      const max=Math.max(r,g,b), min=Math.min(r,g,b), lum=.299*r+.587*g+.114*b;
-      if(lum>=CONFIG.whiteBrightness && max-min<=CONFIG.maxChroma) mask[y*W+x]=1;
+    for(let y=0;y<H;y++){
+      for(let x=0;x<W;x++){
+        const idx=(y*W+x)*4;
+        if(isDarkPixel(d, idx)) mask[y*W+x]=1;
+      }
     }
+
     const seen=new Uint8Array(W*H), qx=new Int16Array(W*H), qy=new Int16Array(W*H);
     let best=null;
-    for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){
-      const start=y*W+x; if(!mask[start]||seen[start]) continue;
-      let head=0,tail=0; qx[tail]=x;qy[tail++]=y;seen[start]=1;
-      let count=0,minX=x,maxX=x,minY=y,maxY=y;
-      while(head<tail){
-        const cx=qx[head],cy=qy[head++]; count++; if(cx<minX)minX=cx;if(cx>maxX)maxX=cx;if(cy<minY)minY=cy;if(cy>maxY)maxY=cy;
-        const ns=[[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy+1]];
-        for(const [nx,ny] of ns){const ni=ny*W+nx;if(nx>0&&nx<W-1&&ny>0&&ny<H-1&&mask[ni]&&!seen[ni]){seen[ni]=1;qx[tail]=nx;qy[tail++]=ny;}}
+
+    for(let y=1;y<H-1;y++){
+      for(let x=1;x<W-1;x++){
+        const start=y*W+x;
+        if(!mask[start] || seen[start]) continue;
+
+        let head=0, tail=0;
+        qx[tail]=x; qy[tail++]=y; seen[start]=1;
+        let count=0, minX=x, maxX=x, minY=y, maxY=y;
+
+        while(head<tail){
+          const cx=qx[head], cy=qy[head++];
+          count++;
+          if(cx<minX) minX=cx; if(cx>maxX) maxX=cx; if(cy<minY) minY=cy; if(cy>maxY) maxY=cy;
+          const neighbors=[[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy+1]];
+          for(const [nx,ny] of neighbors){
+            if(nx<1||nx>=W-1||ny<1||ny>=H-1) continue;
+            const ni=ny*W+nx;
+            if(mask[ni] && !seen[ni]){ seen[ni]=1; qx[tail]=nx; qy[tail++]=ny; }
+          }
+        }
+
+        const w=maxX-minX+1, h=maxY-minY+1;
+        const bboxArea=w*h, areaRatio=bboxArea/(W*H), aspect=w/h, componentFill=count/bboxArea;
+        if(areaRatio<CONFIG.minAreaRatio || areaRatio>CONFIG.maxAreaRatio) continue;
+        if(aspect<CONFIG.minAspect || aspect>CONFIG.maxAspect) continue;
+        if(componentFill<CONFIG.minComponentFill || componentFill>CONFIG.maxComponentFill) continue;
+
+        const borderT = Math.max(2, Math.round(Math.min(w,h)*0.1));
+        const innerX=minX+borderT, innerY=minY+borderT, innerW=w-borderT*2, innerH=h-borderT*2;
+        if(innerW<10 || innerH<10) continue;
+
+        let borderDark=0, borderTotal=0, innerDark=0, innerTotal=0, innerLumSum=0;
+        for(let yy=minY; yy<=maxY; yy++){
+          for(let xx=minX; xx<=maxX; xx++){
+            const inInner = xx>=innerX && xx<innerX+innerW && yy>=innerY && yy<innerY+innerH;
+            const idx=(yy*W+xx)*4;
+            const dark = isDarkPixel(d, idx);
+            if(inInner){
+              innerTotal++;
+              if(dark) innerDark++;
+              innerLumSum += .299*d[idx]+.587*d[idx+1]+.114*d[idx+2];
+            }else{
+              borderTotal++;
+              if(dark) borderDark++;
+            }
+          }
+        }
+        if(borderTotal===0 || innerTotal===0) continue;
+        const borderDarkRatio=borderDark/borderTotal;
+        const innerDarkRatio=innerDark/innerTotal;
+        const innerLumAvg=innerLumSum/innerTotal;
+        if(borderDarkRatio < CONFIG.minBorderDarkRatio) continue;
+        if(innerDarkRatio > CONFIG.maxInnerDarkRatio) continue;
+        if(innerLumAvg < CONFIG.innerWhiteBrightness) continue;
+
+        const touchesEdge = minX<2 || minY<2 || maxX>W-3 || maxY>H-3;
+        const edgePenalty = touchesEdge ? 0.68 : 1;
+        const rectangularity = 1 - Math.abs((componentFill*2.6) - 0.42);
+        const score = bboxArea * borderDarkRatio * (innerLumAvg/255) * (1-innerDarkRatio) * Math.max(0.25, rectangularity) * edgePenalty;
+
+        const candidate = {
+          x:minX, y:minY, w, h, score,
+          borderThickness:borderT,
+          innerLumAvg,
+          borderDarkRatio,
+          innerDarkRatio
+        };
+        if(!best || candidate.score > best.score) best = candidate;
       }
-      const w=maxX-minX+1,h=maxY-minY+1,area=w*h,ratio=area/(W*H),fill=count/area,aspect=w/h;
-      if(ratio<CONFIG.minAreaRatio||ratio>CONFIG.maxAreaRatio||fill<CONFIG.minFillRatio||aspect<CONFIG.minAspect||aspect>CONFIG.maxAspect) continue;
-      const edgePenalty=(minX<3||minY<3||maxX>W-4||maxY>H-4)?0.7:1;
-      const score=count*fill*edgePenalty;
-      if(!best||score>best.score) best={x:minX,y:minY,w,h,score,fill};
     }
     return best;
   }
@@ -165,65 +237,154 @@
   }
 
   function smoothBox(prev,next){
-    if(!prev)return {...next}; const a=.35;
-    return {x:prev.x*(1-a)+next.x*a,y:prev.y*(1-a)+next.y*a,w:prev.w*(1-a)+next.w*a,h:prev.h*(1-a)+next.h*a};
+    if(!prev) return {...next};
+    const a=.35;
+    return {
+      x:prev.x*(1-a)+next.x*a,
+      y:prev.y*(1-a)+next.y*a,
+      w:prev.w*(1-a)+next.w*a,
+      h:prev.h*(1-a)+next.h*a,
+      borderThickness:prev.borderThickness*(1-a)+next.borderThickness*a
+    };
   }
 
   function analyse(){
     if(!stream||video.readyState<2||!video.videoWidth)return;
-    const now=performance.now(),dt=Math.min((now-lastTick)/1000,.25);lastTick=now;
+    const now=performance.now(), dt=Math.min((now-lastTick)/1000,.25); lastTick=now;
     const crop=getVideoCrop();
-    actx.save(); actx.setTransform(-1,0,0,1,analysisCanvas.width,0);
-    actx.drawImage(video,crop.cropX,crop.cropY,crop.visibleW,crop.visibleH,0,0,analysisCanvas.width,analysisCanvas.height); actx.restore();
+    actx.save();
+    actx.setTransform(-1,0,0,1,analysisCanvas.width,0);
+    actx.drawImage(video,crop.cropX,crop.cropY,crop.visibleW,crop.visibleH,0,0,analysisCanvas.width,analysisCanvas.height);
+    actx.restore();
+
     const image=actx.getImageData(0,0,analysisCanvas.width,analysisCanvas.height);
-    detected=findLargestWhiteRegion(image);
+    detected=findBorderedPaper(image);
     const cooled=now-lastCapture>CONFIG.cooldownMs;
+
     if(detected){
-      smoothed=smoothBox(smoothed,detected); const sb=screenBoxFromAnalysis(smoothed);
-      paperBox.style.display='block'; paperBox.style.left=sb.x+'px'; paperBox.style.top=sb.y+'px'; paperBox.style.width=sb.w+'px'; paperBox.style.height=sb.h+'px';
+      smoothed=smoothBox(smoothed, detected);
+      const sb=screenBoxFromAnalysis(smoothed);
+      paperBox.style.display='block';
+      paperBox.style.left=sb.x+'px';
+      paperBox.style.top=sb.y+'px';
+      paperBox.style.width=sb.w+'px';
+      paperBox.style.height=sb.h+'px';
       const stable=boxDistance(detected,previousStableBox)<CONFIG.bboxStability && cooled;
-      if(stable){stableTime+=dt;status.textContent='白い紙を認識しています。そのまま静止してください…';}
-      else{stableTime=Math.max(0,stableTime-dt*1.4);status.textContent=cooled?'白い紙を認識しました。少し静止してください。':'スタンプしました。次の紙を準備してください。';}
+      if(stable){
+        stableTime += dt;
+        status.textContent='黒い縁の紙を認識しています。そのまま静止してください…';
+      }else{
+        stableTime = Math.max(0, stableTime-dt*1.4);
+        status.textContent = cooled ? '黒い縁の紙を認識しました。少し静止してください。' : 'スタンプしました。次の紙を準備してください。';
+      }
       previousStableBox={...detected};
     }else{
-      detected=smoothed=previousStableBox=null; stableTime=Math.max(0,stableTime-dt*2); paperBox.style.display='none';
-      status.textContent=cooled?'白い紙を画面内にかざしてください。背景と明るさに差があると安定します。':'スタンプしました。次の紙を準備してください。';
+      detected=smoothed=previousStableBox=null;
+      stableTime=Math.max(0, stableTime-dt*2);
+      paperBox.style.display='none';
+      status.textContent = cooled ? '黒い縁付きの白い紙をかざしてください。背景より暗い縁が見えると認識しやすくなります。' : 'スタンプしました。次の紙を準備してください。';
     }
-    const ratio=Math.min(stableTime/CONFIG.stableSeconds,1); progressBar.style.width=(ratio*100)+'%'; paperBox.classList.toggle('ready',ratio>.72);
-    if(stableTime>=CONFIG.stableSeconds){stableTime=0;progressBar.style.width='0%';captureStamp();}
+
+    const ratio=Math.min(stableTime/CONFIG.stableSeconds,1);
+    progressBar.style.width=(ratio*100)+'%';
+    paperBox.classList.toggle('ready', ratio > .72);
+    if(stableTime>=CONFIG.stableSeconds){
+      stableTime=0;
+      progressBar.style.width='0%';
+      captureStamp();
+    }
   }
 
   function captureStamp(){
-    if(!stream||video.readyState<2||!smoothed){status.textContent='白い紙が認識されていません。';return;}
-    const pad=2.5, b={x:Math.max(0,smoothed.x-pad),y:Math.max(0,smoothed.y-pad),w:Math.min(analysisCanvas.width-smoothed.x+pad,smoothed.w+pad*2),h:Math.min(analysisCanvas.height-smoothed.y+pad,smoothed.h+pad*2)};
-    const r=sourceRectFromAnalysis(b); const scale=Math.min(1,CONFIG.captureMaxSide/Math.max(r.sw,r.sh));
-    const outW=Math.max(80,Math.round(r.sw*scale)),outH=Math.max(80,Math.round(r.sh*scale));
-    captureCanvas.width=outW;captureCanvas.height=outH;cctx.clearRect(0,0,outW,outH);
-    cctx.save();cctx.setTransform(-1,0,0,1,outW,0);cctx.drawImage(video,r.sx,r.sy,r.sw,r.sh,0,0,outW,outH);cctx.restore();
-    const image=new Image();
-    image.onload=()=>{
-      const sb=screenBoxFromAnalysis(smoothed),maxDisplay=Math.min(innerWidth*.58,360),ratio=outW/outH;
-      let w=Math.min(sb.w,maxDisplay),h=w/ratio;if(h>innerHeight*.5){h=innerHeight*.5;w=h*ratio;}
-      stamps.push({image,x:sb.x+sb.w/2,y:sb.y+sb.h/2,width:w,height:h,vx:(Math.random()-.5)*20,vy:18+Math.random()*12,gravity:13+Math.random()*8,angle:(Math.random()-.5)*.18,angularVelocity:(Math.random()-.5)*.26,phase:Math.random()*Math.PI*2,flutter:16+Math.random()*20,flutterSpeed:1.1+Math.random()*1.5,age:0,opacity:1});
-      if(stamps.length>CONFIG.maxStamps)stamps.shift();
+    if(!stream||video.readyState<2||!smoothed){ status.textContent='黒い縁付きの紙が認識されていません。'; return; }
+
+    const inset = Math.max(Math.round(smoothed.borderThickness || Math.min(smoothed.w, smoothed.h)*CONFIG.defaultInsetRatio), Math.round(Math.min(smoothed.w, smoothed.h)*0.045));
+    const b={
+      x: clamp(smoothed.x+inset, 0, analysisCanvas.width-8),
+      y: clamp(smoothed.y+inset, 0, analysisCanvas.height-8),
+      w: clamp(smoothed.w-inset*2, 8, analysisCanvas.width),
+      h: clamp(smoothed.h-inset*2, 8, analysisCanvas.height)
     };
-    image.src=captureCanvas.toDataURL('image/jpeg',.92);
-    lastCapture=performance.now();flash.classList.remove('on');void flash.offsetWidth;flash.classList.add('on');paperBox.classList.remove('ready');status.textContent='スタンプしました。次の紙を準備してください。';
+
+    const r=sourceRectFromAnalysis(b);
+    const scale=Math.min(1, CONFIG.captureMaxSide/Math.max(r.sw,r.sh));
+    const outW=Math.max(80, Math.round(r.sw*scale)), outH=Math.max(80, Math.round(r.sh*scale));
+    captureCanvas.width=outW; captureCanvas.height=outH;
+    cctx.clearRect(0,0,outW,outH);
+    cctx.save();
+    cctx.setTransform(-1,0,0,1,outW,0);
+    cctx.drawImage(video,r.sx,r.sy,r.sw,r.sh,0,0,outW,outH);
+    cctx.restore();
+
+    const image = new Image();
+    image.onload = () => {
+      const sb=screenBoxFromAnalysis(b), maxDisplay=Math.min(innerWidth*.58, 360), ratio=outW/outH;
+      let w=Math.min(sb.w, maxDisplay), h=w/ratio;
+      if(h>innerHeight*.5){ h=innerHeight*.5; w=h*ratio; }
+      stamps.push({
+        image,
+        x:sb.x+sb.w/2,
+        y:sb.y+sb.h/2,
+        width:w,
+        height:h,
+        vx:(Math.random()-.5)*20,
+        vy:18+Math.random()*12,
+        gravity:13+Math.random()*8,
+        angle:(Math.random()-.5)*.18,
+        angularVelocity:(Math.random()-.5)*.26,
+        phase:Math.random()*Math.PI*2,
+        flutter:16+Math.random()*20,
+        flutterSpeed:1.1+Math.random()*1.5,
+        age:0,
+        opacity:1
+      });
+      if(stamps.length>CONFIG.maxStamps) stamps.shift();
+    };
+    image.src=captureCanvas.toDataURL('image/jpeg', .92);
+
+    lastCapture=performance.now();
+    flash.classList.remove('on'); void flash.offsetWidth; flash.classList.add('on');
+    paperBox.classList.remove('ready');
+    status.textContent='スタンプしました。次の紙を準備してください。';
   }
 
   function drawStamp(s,time,dt){
-    s.age+=dt;s.vy+=s.gravity*dt;s.y+=s.vy*dt;s.x+=s.vx*dt+Math.sin(time*s.flutterSpeed+s.phase)*s.flutter*dt;s.angle+=s.angularVelocity*dt+Math.sin(time*1.7+s.phase)*.012;
+    s.age+=dt;
+    s.vy+=s.gravity*dt;
+    s.y+=s.vy*dt;
+    s.x+=s.vx*dt + Math.sin(time*s.flutterSpeed+s.phase)*s.flutter*dt;
+    s.angle+=s.angularVelocity*dt + Math.sin(time*1.7+s.phase)*.012;
     const squash=.8+Math.abs(Math.cos(time*s.flutterSpeed+s.phase))*.2;
-    ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.angle);ctx.scale(squash,1);ctx.shadowColor='rgba(0,0,0,.3)';ctx.shadowBlur=Math.max(6,18*squash);ctx.shadowOffsetY=8;ctx.drawImage(s.image,-s.width/2,-s.height/2,s.width,s.height);ctx.restore();
+    ctx.save();
+    ctx.translate(s.x,s.y);
+    ctx.rotate(s.angle);
+    ctx.scale(squash,1);
+    ctx.shadowColor='rgba(0,0,0,.3)';
+    ctx.shadowBlur=Math.max(6,18*squash);
+    ctx.shadowOffsetY=8;
+    ctx.drawImage(s.image,-s.width/2,-s.height/2,s.width,s.height);
+    ctx.restore();
   }
 
   let prevAnim=performance.now();
-  function animate(now){const dt=Math.min((now-prevAnim)/1000,.04);prevAnim=now;ctx.clearRect(0,0,innerWidth,innerHeight);const t=now/1000;for(const s of stamps)drawStamp(s,t,dt);stamps=stamps.filter(s=>s.y-s.height/2<innerHeight+100&&s.age<30);requestAnimationFrame(animate);}
+  function animate(now){
+    const dt=Math.min((now-prevAnim)/1000,.04); prevAnim=now;
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+    const t=now/1000;
+    for(const s of stamps) drawStamp(s,t,dt);
+    stamps=stamps.filter(s=>s.y-s.height/2<innerHeight+100 && s.age<30);
+    requestAnimationFrame(animate);
+  }
 
-  startButton.addEventListener('click',startCamera); captureButton.addEventListener('click',captureStamp); clearButton.addEventListener('click',()=>stamps=[]);
-  window.addEventListener('resize',resizeScene); window.addEventListener('beforeunload',stopCamera);
-  resizeScene();requestAnimationFrame(animate);
+  startButton.addEventListener('click',startCamera);
+  captureButton.addEventListener('click',captureStamp);
+  clearButton.addEventListener('click',()=>stamps=[]);
+  window.addEventListener('resize',resizeScene);
+  window.addEventListener('beforeunload',stopCamera);
+  resizeScene();
+  requestAnimationFrame(animate);
 })();
 </script>
+
 </body>
 </html>
