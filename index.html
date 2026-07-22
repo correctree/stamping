@@ -48,12 +48,59 @@
   <canvas id="frameCanvas" hidden></canvas>
 
   <script>
-    window.onOpenCvReady = function() {
-      window.__opencvReady = true;
-      window.dispatchEvent(new Event('opencv-ready'));
+    window.__opencvReady = false;
+    window.__opencvLoadError = null;
+
+    window.loadOpenCvWithFallback = async function () {
+      const sources = [
+        'https://docs.opencv.org/4.x/opencv.js',
+        'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js',
+        'https://unpkg.com/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js'
+      ];
+
+      const waitForRuntime = async () => {
+        const started = Date.now();
+        while (Date.now() - started < 30000) {
+          try {
+            if (window.cv && typeof window.cv.then === 'function') {
+              window.cv = await window.cv;
+            }
+            if (window.cv && typeof window.cv.Mat === 'function') return true;
+          } catch (_) {}
+          await new Promise(resolve => setTimeout(resolve, 120));
+        }
+        return false;
+      };
+
+      for (const src of sources) {
+        try {
+          const script = document.createElement('script');
+          script.async = true;
+          script.src = src;
+          script.crossOrigin = 'anonymous';
+          const loaded = new Promise((resolve, reject) => {
+            script.onload = resolve;
+            script.onerror = () => reject(new Error('script load failed'));
+          });
+          document.head.appendChild(script);
+          await loaded;
+          if (await waitForRuntime()) {
+            window.__opencvReady = true;
+            window.dispatchEvent(new Event('opencv-ready'));
+            return;
+          }
+          script.remove();
+          try { delete window.cv; } catch (_) { window.cv = undefined; }
+        } catch (error) {
+          window.__opencvLoadError = error;
+        }
+      }
+
+      window.dispatchEvent(new Event('opencv-error'));
     };
+
+    window.loadOpenCvWithFallback();
   </script>
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="cv['onRuntimeInitialized']=onOpenCvReady;"></script>
 
   <script>
   (() => {
@@ -104,7 +151,7 @@
     let stableTime = 0;
     let lastTick = performance.now();
     let lastCapture = 0;
-    let cvReady = !!window.__opencvReady;
+    let cvReady = false;
 
     function setStatus(text) { status.textContent = text; }
 
@@ -507,10 +554,17 @@
       setStatus('OpenCV.js の準備ができました。「カメラを開始」を押してください。');
     }
 
-    if (cvReady) {
+    function handleOpenCvError() {
+      cvReady = false;
+      startButton.disabled = true;
+      setStatus('OpenCV.jsを読み込めませんでした。インターネット接続、広告・追跡防止機能、CDNのブロックを確認してください。');
+    }
+
+    if (window.__opencvReady && window.cv && typeof window.cv.Mat === 'function') {
       handleOpenCvReady();
     } else {
       window.addEventListener('opencv-ready', handleOpenCvReady, { once: true });
+      window.addEventListener('opencv-error', handleOpenCvError, { once: true });
     }
 
     startButton.addEventListener('click', startCamera);
