@@ -3,467 +3,227 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Digital Stamping — Falling Paper</title>
+  <title>White Paper Auto Stamping</title>
   <style>
-    :root {
-      color-scheme: dark;
-      --accent: #ffffff;
-      --panel: rgba(0, 0, 0, 0.48);
-    }
-
+    :root { color-scheme: dark; --panel: rgba(0,0,0,.48); }
     * { box-sizing: border-box; }
-
-    html, body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      overflow: hidden;
-      background: #111;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
-    #camera,
-    #scene {
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-    }
-
-    #camera {
-      object-fit: cover;
-      transform: scaleX(-1);
-      background: #111;
-    }
-
-    #scene {
-      pointer-events: none;
-    }
-
-    .shade {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      background: radial-gradient(circle at center, transparent 0 27%, rgba(0,0,0,.18) 48%, rgba(0,0,0,.5) 100%);
-    }
-
-    #guide {
-      position: fixed;
-      left: 50%;
-      top: 45%;
-      width: min(64vw, 420px);
-      aspect-ratio: 1 / 1;
-      transform: translate(-50%, -50%);
-      border: 2px solid rgba(255,255,255,.72);
-      border-radius: 18px;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,.08), 0 0 24px rgba(255,255,255,.16);
-      pointer-events: none;
-      transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
-    }
-
-    #guide::before,
-    #guide::after {
-      content: "";
-      position: absolute;
-      inset: 12px;
-      border-radius: 12px;
-      border: 1px dashed rgba(255,255,255,.28);
-    }
-
-    #guide.ready {
-      border-color: #fff;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,.06), 0 0 42px rgba(255,255,255,.75);
-      transform: translate(-50%, -50%) scale(1.025);
-    }
-
-    #progress {
-      position: fixed;
-      left: 50%;
-      top: calc(45% + min(32vw, 210px) + 28px);
-      width: min(64vw, 420px);
-      height: 5px;
-      transform: translateX(-50%);
-      overflow: hidden;
-      border-radius: 999px;
-      background: rgba(255,255,255,.18);
-      pointer-events: none;
-    }
-
-    #progressBar {
-      width: 0%;
-      height: 100%;
-      border-radius: inherit;
-      background: #fff;
-      transition: width .08s linear;
-    }
-
-    #status {
-      position: fixed;
-      left: 50%;
-      top: calc(45% + min(32vw, 210px) + 44px);
-      transform: translateX(-50%);
-      width: min(88vw, 560px);
-      text-align: center;
-      color: #fff;
-      font-size: 14px;
-      line-height: 1.5;
-      text-shadow: 0 1px 8px rgba(0,0,0,.8);
-      pointer-events: none;
-    }
-
-    #controls {
-      position: fixed;
-      left: 50%;
-      bottom: max(18px, env(safe-area-inset-bottom));
-      transform: translateX(-50%);
-      display: flex;
-      gap: 10px;
-      z-index: 3;
-    }
-
-    button {
-      appearance: none;
-      border: 1px solid rgba(255,255,255,.28);
-      border-radius: 999px;
-      padding: 11px 17px;
-      color: #fff;
-      background: var(--panel);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      font: inherit;
-      cursor: pointer;
-    }
-
-    button:active { transform: scale(.98); }
-    button:disabled { opacity: .45; cursor: default; }
-
-    #flash {
-      position: fixed;
-      inset: 0;
-      background: #fff;
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    #flash.on { animation: flash .32s ease-out; }
-
-    @keyframes flash {
-      0% { opacity: 0; }
-      20% { opacity: .55; }
-      100% { opacity: 0; }
-    }
-
-    @media (max-height: 650px) {
-      #guide { top: 42%; width: min(50vw, 320px); }
-      #progress { top: calc(42% + min(25vw, 160px) + 18px); }
-      #status { top: calc(42% + min(25vw, 160px) + 32px); }
-    }
+    html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#111; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    #camera, #scene { position:fixed; inset:0; width:100%; height:100%; }
+    #camera { object-fit:cover; transform:scaleX(-1); background:#111; }
+    #scene { pointer-events:none; }
+    .shade { position:fixed; inset:0; pointer-events:none; background:radial-gradient(circle at center, transparent 0 38%, rgba(0,0,0,.08) 65%, rgba(0,0,0,.34) 100%); }
+    #paperBox { position:fixed; display:none; pointer-events:none; border:3px solid rgba(255,255,255,.95); border-radius:10px; box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 28px rgba(255,255,255,.55); transition:left .08s linear,top .08s linear,width .08s linear,height .08s linear,box-shadow .2s,border-color .2s; }
+    #paperBox::before,#paperBox::after { content:""; position:absolute; width:20px; height:20px; border-color:#fff; }
+    #paperBox::before { left:-7px; top:-7px; border-left:4px solid; border-top:4px solid; }
+    #paperBox::after { right:-7px; bottom:-7px; border-right:4px solid; border-bottom:4px solid; }
+    #paperBox.ready { border-color:#9dffb2; box-shadow:0 0 0 1px rgba(0,0,0,.35),0 0 42px rgba(120,255,160,.9); }
+    #progress { position:fixed; left:50%; bottom:96px; width:min(74vw,460px); height:5px; transform:translateX(-50%); overflow:hidden; border-radius:999px; background:rgba(255,255,255,.18); pointer-events:none; }
+    #progressBar { width:0; height:100%; border-radius:inherit; background:#fff; transition:width .08s linear; }
+    #status { position:fixed; left:50%; bottom:112px; transform:translateX(-50%); width:min(90vw,620px); text-align:center; color:#fff; font-size:14px; line-height:1.55; text-shadow:0 1px 9px rgba(0,0,0,.9); pointer-events:none; }
+    #controls { position:fixed; left:50%; bottom:max(18px,env(safe-area-inset-bottom)); transform:translateX(-50%); display:flex; gap:10px; z-index:4; }
+    button { appearance:none; border:1px solid rgba(255,255,255,.28); border-radius:999px; padding:11px 16px; color:#fff; background:var(--panel); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); font:inherit; cursor:pointer; white-space:nowrap; }
+    button:active { transform:scale(.98); } button:disabled { opacity:.4; cursor:default; }
+    #flash { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; }
+    #flash.on { animation:flash .32s ease-out; }
+    @keyframes flash { 0%{opacity:0} 18%{opacity:.5} 100%{opacity:0} }
+    @media(max-width:520px){ button{padding:10px 13px;font-size:13px} #status{font-size:13px;bottom:108px} #progress{bottom:94px} }
   </style>
 </head>
 <body>
   <video id="camera" autoplay muted playsinline></video>
   <canvas id="scene"></canvas>
   <div class="shade"></div>
-  <div id="guide" aria-hidden="true"></div>
+  <div id="paperBox" aria-hidden="true"></div>
+  <div id="status">「カメラを開始」を押し、白い紙を画面内にかざしてください。</div>
   <div id="progress"><div id="progressBar"></div></div>
-  <div id="status">「カメラを開始」を押し、枠内に絵柄を入れて約2秒静止してください。</div>
-
   <div id="controls">
     <button id="startButton">カメラを開始</button>
     <button id="captureButton" disabled>手動スタンプ</button>
     <button id="clearButton">クリア</button>
   </div>
   <div id="flash"></div>
-
-  <canvas id="sampleCanvas" width="64" height="64" hidden></canvas>
+  <canvas id="analysisCanvas" width="160" height="120" hidden></canvas>
   <canvas id="captureCanvas" hidden></canvas>
 
-  <script>
-    (() => {
-      'use strict';
+<script>
+(() => {
+  'use strict';
+  const video = document.getElementById('camera');
+  const scene = document.getElementById('scene');
+  const ctx = scene.getContext('2d');
+  const analysisCanvas = document.getElementById('analysisCanvas');
+  const actx = analysisCanvas.getContext('2d', { willReadFrequently:true });
+  const captureCanvas = document.getElementById('captureCanvas');
+  const cctx = captureCanvas.getContext('2d');
+  const paperBox = document.getElementById('paperBox');
+  const progressBar = document.getElementById('progressBar');
+  const status = document.getElementById('status');
+  const startButton = document.getElementById('startButton');
+  const captureButton = document.getElementById('captureButton');
+  const clearButton = document.getElementById('clearButton');
+  const flash = document.getElementById('flash');
 
-      const video = document.getElementById('camera');
-      const scene = document.getElementById('scene');
-      const ctx = scene.getContext('2d');
-      const sampleCanvas = document.getElementById('sampleCanvas');
-      const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
-      const captureCanvas = document.getElementById('captureCanvas');
-      const captureCtx = captureCanvas.getContext('2d');
-      const guide = document.getElementById('guide');
-      const progressBar = document.getElementById('progressBar');
-      const status = document.getElementById('status');
-      const startButton = document.getElementById('startButton');
-      const captureButton = document.getElementById('captureButton');
-      const clearButton = document.getElementById('clearButton');
-      const flash = document.getElementById('flash');
+  const CONFIG = {
+    stableSeconds: 1.8,
+    cooldownMs: 1800,
+    analysisIntervalMs: 100,
+    minAreaRatio: 0.035,
+    maxAreaRatio: 0.82,
+    minFillRatio: 0.48,
+    minAspect: 0.42,
+    maxAspect: 2.35,
+    whiteBrightness: 168,
+    maxChroma: 62,
+    bboxStability: 0.075,
+    captureMaxSide: 520,
+    maxStamps: 30
+  };
 
-      const CONFIG = {
-        stableSeconds: 2.0,
-        motionThreshold: 8.2,
-        minimumBrightness: 35,
-        cooldownMs: 1800,
-        maxStamps: 28,
-        captureSize: 360
-      };
+  let stream = null, timer = null, stamps = [];
+  let detected = null, smoothed = null, previousStableBox = null;
+  let stableTime = 0, lastTick = performance.now(), lastCapture = 0;
 
-      let stream = null;
-      let stamps = [];
-      let previousPixels = null;
-      let stableTime = 0;
-      let lastCheckTime = performance.now();
-      let lastCaptureTime = 0;
-      let analysisTimer = null;
-      let animationId = null;
+  function resizeScene(){
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    scene.width = Math.round(innerWidth*dpr); scene.height = Math.round(innerHeight*dpr);
+    scene.style.width = innerWidth+'px'; scene.style.height = innerHeight+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
 
-      function resizeScene() {
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        scene.width = Math.round(innerWidth * dpr);
-        scene.height = Math.round(innerHeight * dpr);
-        scene.style.width = innerWidth + 'px';
-        scene.style.height = innerHeight + 'px';
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  function getVideoCrop(){
+    const vw=video.videoWidth, vh=video.videoHeight, sw=innerWidth, sh=innerHeight;
+    const vr=vw/vh, sr=sw/sh;
+    if(vr>sr){ const visibleW=vh*sr; return {vw,vh,visibleW,visibleH:vh,cropX:(vw-visibleW)/2,cropY:0}; }
+    const visibleH=vw/sr; return {vw,vh,visibleW:vw,visibleH,cropX:0,cropY:(vh-visibleH)/2};
+  }
+
+  function screenBoxFromAnalysis(b){
+    return { x:b.x/analysisCanvas.width*innerWidth, y:b.y/analysisCanvas.height*innerHeight,
+      w:b.w/analysisCanvas.width*innerWidth, h:b.h/analysisCanvas.height*innerHeight };
+  }
+
+  function sourceRectFromAnalysis(b){
+    const crop=getVideoCrop();
+    const mx=b.x/analysisCanvas.width*crop.visibleW;
+    const my=b.y/analysisCanvas.height*crop.visibleH;
+    const mw=b.w/analysisCanvas.width*crop.visibleW;
+    const mh=b.h/analysisCanvas.height*crop.visibleH;
+    return { sx:crop.cropX+(crop.visibleW-mx-mw), sy:crop.cropY+my, sw:mw, sh:mh };
+  }
+
+  async function startCamera(){
+    try{
+      stopCamera();
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+      video.srcObject=stream; await video.play();
+      startButton.textContent='カメラ再起動'; captureButton.disabled=false;
+      status.textContent='白い紙を画面内にかざし、輪郭が表示されたら静止してください。';
+      stableTime=0; detected=smoothed=previousStableBox=null; lastTick=performance.now();
+      timer=setInterval(analyse,CONFIG.analysisIntervalMs);
+    }catch(e){ console.error(e); status.textContent='カメラを開始できません。HTTPS環境とカメラ許可を確認してください。'; }
+  }
+
+  function stopCamera(){
+    if(timer){clearInterval(timer);timer=null;}
+    if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  }
+
+  function findLargestWhiteRegion(image){
+    const W=analysisCanvas.width,H=analysisCanvas.height,d=image.data;
+    const mask=new Uint8Array(W*H);
+    for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){
+      const i=(y*W+x)*4, r=d[i],g=d[i+1],b=d[i+2];
+      const max=Math.max(r,g,b), min=Math.min(r,g,b), lum=.299*r+.587*g+.114*b;
+      if(lum>=CONFIG.whiteBrightness && max-min<=CONFIG.maxChroma) mask[y*W+x]=1;
+    }
+    const seen=new Uint8Array(W*H), qx=new Int16Array(W*H), qy=new Int16Array(W*H);
+    let best=null;
+    for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){
+      const start=y*W+x; if(!mask[start]||seen[start]) continue;
+      let head=0,tail=0; qx[tail]=x;qy[tail++]=y;seen[start]=1;
+      let count=0,minX=x,maxX=x,minY=y,maxY=y;
+      while(head<tail){
+        const cx=qx[head],cy=qy[head++]; count++; if(cx<minX)minX=cx;if(cx>maxX)maxX=cx;if(cy<minY)minY=cy;if(cy>maxY)maxY=cy;
+        const ns=[[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy+1]];
+        for(const [nx,ny] of ns){const ni=ny*W+nx;if(nx>0&&nx<W-1&&ny>0&&ny<H-1&&mask[ni]&&!seen[ni]){seen[ni]=1;qx[tail]=nx;qy[tail++]=ny;}}
       }
+      const w=maxX-minX+1,h=maxY-minY+1,area=w*h,ratio=area/(W*H),fill=count/area,aspect=w/h;
+      if(ratio<CONFIG.minAreaRatio||ratio>CONFIG.maxAreaRatio||fill<CONFIG.minFillRatio||aspect<CONFIG.minAspect||aspect>CONFIG.maxAspect) continue;
+      const edgePenalty=(minX<3||minY<3||maxX>W-4||maxY>H-4)?0.7:1;
+      const score=count*fill*edgePenalty;
+      if(!best||score>best.score) best={x:minX,y:minY,w,h,score,fill};
+    }
+    return best;
+  }
 
-      function getVideoCrop() {
-        const vw = video.videoWidth;
-        const vh = video.videoHeight;
-        const sw = innerWidth;
-        const sh = innerHeight;
-        const videoRatio = vw / vh;
-        const screenRatio = sw / sh;
+  function boxDistance(a,b){
+    if(!a||!b)return Infinity;
+    const acx=a.x+a.w/2,acy=a.y+a.h/2,bcx=b.x+b.w/2,bcy=b.y+b.h/2;
+    const pos=Math.hypot(acx-bcx,acy-bcy)/Math.hypot(analysisCanvas.width,analysisCanvas.height);
+    const size=(Math.abs(a.w-b.w)+Math.abs(a.h-b.h))/(analysisCanvas.width+analysisCanvas.height);
+    return pos+size;
+  }
 
-        let visibleW, visibleH, cropX, cropY;
-        if (videoRatio > screenRatio) {
-          visibleH = vh;
-          visibleW = vh * screenRatio;
-          cropX = (vw - visibleW) / 2;
-          cropY = 0;
-        } else {
-          visibleW = vw;
-          visibleH = vw / screenRatio;
-          cropX = 0;
-          cropY = (vh - visibleH) / 2;
-        }
+  function smoothBox(prev,next){
+    if(!prev)return {...next}; const a=.35;
+    return {x:prev.x*(1-a)+next.x*a,y:prev.y*(1-a)+next.y*a,w:prev.w*(1-a)+next.w*a,h:prev.h*(1-a)+next.h*a};
+  }
 
-        return { vw, vh, visibleW, visibleH, cropX, cropY };
-      }
+  function analyse(){
+    if(!stream||video.readyState<2||!video.videoWidth)return;
+    const now=performance.now(),dt=Math.min((now-lastTick)/1000,.25);lastTick=now;
+    const crop=getVideoCrop();
+    actx.save(); actx.setTransform(-1,0,0,1,analysisCanvas.width,0);
+    actx.drawImage(video,crop.cropX,crop.cropY,crop.visibleW,crop.visibleH,0,0,analysisCanvas.width,analysisCanvas.height); actx.restore();
+    const image=actx.getImageData(0,0,analysisCanvas.width,analysisCanvas.height);
+    detected=findLargestWhiteRegion(image);
+    const cooled=now-lastCapture>CONFIG.cooldownMs;
+    if(detected){
+      smoothed=smoothBox(smoothed,detected); const sb=screenBoxFromAnalysis(smoothed);
+      paperBox.style.display='block'; paperBox.style.left=sb.x+'px'; paperBox.style.top=sb.y+'px'; paperBox.style.width=sb.w+'px'; paperBox.style.height=sb.h+'px';
+      const stable=boxDistance(detected,previousStableBox)<CONFIG.bboxStability && cooled;
+      if(stable){stableTime+=dt;status.textContent='白い紙を認識しています。そのまま静止してください…';}
+      else{stableTime=Math.max(0,stableTime-dt*1.4);status.textContent=cooled?'白い紙を認識しました。少し静止してください。':'スタンプしました。次の紙を準備してください。';}
+      previousStableBox={...detected};
+    }else{
+      detected=smoothed=previousStableBox=null; stableTime=Math.max(0,stableTime-dt*2); paperBox.style.display='none';
+      status.textContent=cooled?'白い紙を画面内にかざしてください。背景と明るさに差があると安定します。':'スタンプしました。次の紙を準備してください。';
+    }
+    const ratio=Math.min(stableTime/CONFIG.stableSeconds,1); progressBar.style.width=(ratio*100)+'%'; paperBox.classList.toggle('ready',ratio>.72);
+    if(stableTime>=CONFIG.stableSeconds){stableTime=0;progressBar.style.width='0%';captureStamp();}
+  }
 
-      function guideRectInVideo() {
-        const g = guide.getBoundingClientRect();
-        const crop = getVideoCrop();
+  function captureStamp(){
+    if(!stream||video.readyState<2||!smoothed){status.textContent='白い紙が認識されていません。';return;}
+    const pad=2.5, b={x:Math.max(0,smoothed.x-pad),y:Math.max(0,smoothed.y-pad),w:Math.min(analysisCanvas.width-smoothed.x+pad,smoothed.w+pad*2),h:Math.min(analysisCanvas.height-smoothed.y+pad,smoothed.h+pad*2)};
+    const r=sourceRectFromAnalysis(b); const scale=Math.min(1,CONFIG.captureMaxSide/Math.max(r.sw,r.sh));
+    const outW=Math.max(80,Math.round(r.sw*scale)),outH=Math.max(80,Math.round(r.sh*scale));
+    captureCanvas.width=outW;captureCanvas.height=outH;cctx.clearRect(0,0,outW,outH);
+    cctx.save();cctx.setTransform(-1,0,0,1,outW,0);cctx.drawImage(video,r.sx,r.sy,r.sw,r.sh,0,0,outW,outH);cctx.restore();
+    const image=new Image();
+    image.onload=()=>{
+      const sb=screenBoxFromAnalysis(smoothed),maxDisplay=Math.min(innerWidth*.58,360),ratio=outW/outH;
+      let w=Math.min(sb.w,maxDisplay),h=w/ratio;if(h>innerHeight*.5){h=innerHeight*.5;w=h*ratio;}
+      stamps.push({image,x:sb.x+sb.w/2,y:sb.y+sb.h/2,width:w,height:h,vx:(Math.random()-.5)*20,vy:18+Math.random()*12,gravity:13+Math.random()*8,angle:(Math.random()-.5)*.18,angularVelocity:(Math.random()-.5)*.26,phase:Math.random()*Math.PI*2,flutter:16+Math.random()*20,flutterSpeed:1.1+Math.random()*1.5,age:0,opacity:1});
+      if(stamps.length>CONFIG.maxStamps)stamps.shift();
+    };
+    image.src=captureCanvas.toDataURL('image/jpeg',.92);
+    lastCapture=performance.now();flash.classList.remove('on');void flash.offsetWidth;flash.classList.add('on');paperBox.classList.remove('ready');status.textContent='スタンプしました。次の紙を準備してください。';
+  }
 
-        const xOnVisible = g.left / innerWidth * crop.visibleW;
-        const yOnVisible = g.top / innerHeight * crop.visibleH;
-        const wOnVisible = g.width / innerWidth * crop.visibleW;
-        const hOnVisible = g.height / innerHeight * crop.visibleH;
+  function drawStamp(s,time,dt){
+    s.age+=dt;s.vy+=s.gravity*dt;s.y+=s.vy*dt;s.x+=s.vx*dt+Math.sin(time*s.flutterSpeed+s.phase)*s.flutter*dt;s.angle+=s.angularVelocity*dt+Math.sin(time*1.7+s.phase)*.012;
+    const squash=.8+Math.abs(Math.cos(time*s.flutterSpeed+s.phase))*.2;
+    ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.angle);ctx.scale(squash,1);ctx.shadowColor='rgba(0,0,0,.3)';ctx.shadowBlur=Math.max(6,18*squash);ctx.shadowOffsetY=8;ctx.drawImage(s.image,-s.width/2,-s.height/2,s.width,s.height);ctx.restore();
+  }
 
-        // video is mirrored by CSS; source pixels need horizontal reversal.
-        const sx = crop.cropX + (crop.visibleW - xOnVisible - wOnVisible);
-        const sy = crop.cropY + yOnVisible;
+  let prevAnim=performance.now();
+  function animate(now){const dt=Math.min((now-prevAnim)/1000,.04);prevAnim=now;ctx.clearRect(0,0,innerWidth,innerHeight);const t=now/1000;for(const s of stamps)drawStamp(s,t,dt);stamps=stamps.filter(s=>s.y-s.height/2<innerHeight+100&&s.age<30);requestAnimationFrame(animate);}
 
-        return {
-          sx: Math.max(0, sx),
-          sy: Math.max(0, sy),
-          sw: Math.min(crop.vw - sx, wOnVisible),
-          sh: Math.min(crop.vh - sy, hOnVisible)
-        };
-      }
-
-      async function startCamera() {
-        try {
-          stopCamera();
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: 'environment',
-              width: { ideal: 1280 },
-              height: { ideal: 720 }
-            },
-            audio: false
-          });
-
-          video.srcObject = stream;
-          await video.play();
-          startButton.textContent = 'カメラ再起動';
-          captureButton.disabled = false;
-          status.textContent = '枠内に絵柄を入れ、動かさずに約2秒待ってください。';
-          previousPixels = null;
-          stableTime = 0;
-          lastCheckTime = performance.now();
-          analysisTimer = setInterval(analyseFrame, 100);
-        } catch (error) {
-          console.error(error);
-          status.textContent = 'カメラを開始できません。HTTPS環境とブラウザのカメラ許可を確認してください。';
-        }
-      }
-
-      function stopCamera() {
-        if (analysisTimer) {
-          clearInterval(analysisTimer);
-          analysisTimer = null;
-        }
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-          stream = null;
-        }
-      }
-
-      function analyseFrame() {
-        if (!stream || video.readyState < 2 || !video.videoWidth) return;
-
-        const now = performance.now();
-        const dt = Math.min((now - lastCheckTime) / 1000, 0.25);
-        lastCheckTime = now;
-
-        const r = guideRectInVideo();
-        sampleCtx.save();
-        sampleCtx.setTransform(-1, 0, 0, 1, sampleCanvas.width, 0);
-        sampleCtx.drawImage(video, r.sx, r.sy, r.sw, r.sh, 0, 0, sampleCanvas.width, sampleCanvas.height);
-        sampleCtx.restore();
-
-        const frame = sampleCtx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height);
-        const pixels = frame.data;
-
-        let brightness = 0;
-        for (let i = 0; i < pixels.length; i += 16) {
-          brightness += (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
-        }
-        brightness /= pixels.length / 16;
-
-        let motion = Infinity;
-        if (previousPixels && previousPixels.length === pixels.length) {
-          let diff = 0;
-          let count = 0;
-          for (let i = 0; i < pixels.length; i += 16) {
-            diff += Math.abs(pixels[i] - previousPixels[i]);
-            diff += Math.abs(pixels[i + 1] - previousPixels[i + 1]);
-            diff += Math.abs(pixels[i + 2] - previousPixels[i + 2]);
-            count += 3;
-          }
-          motion = diff / count;
-        }
-        previousPixels = new Uint8ClampedArray(pixels);
-
-        const cooledDown = now - lastCaptureTime > CONFIG.cooldownMs;
-        const isStable = motion < CONFIG.motionThreshold && brightness > CONFIG.minimumBrightness && cooledDown;
-
-        if (isStable) {
-          stableTime += dt;
-          status.textContent = 'そのまま静止してください…';
-        } else {
-          stableTime = Math.max(0, stableTime - dt * 1.8);
-          if (!cooledDown) {
-            status.textContent = 'スタンプしました。次の絵柄を準備してください。';
-          } else if (brightness <= CONFIG.minimumBrightness) {
-            status.textContent = '枠内をもう少し明るくしてください。';
-          } else {
-            status.textContent = '枠内に絵柄を入れ、動かさずに約2秒待ってください。';
-          }
-        }
-
-        const ratio = Math.min(stableTime / CONFIG.stableSeconds, 1);
-        progressBar.style.width = `${ratio * 100}%`;
-        guide.classList.toggle('ready', ratio > 0.72);
-
-        if (stableTime >= CONFIG.stableSeconds) {
-          stableTime = 0;
-          progressBar.style.width = '0%';
-          captureStamp();
-        }
-      }
-
-      function captureStamp() {
-        if (!stream || video.readyState < 2) return;
-
-        const r = guideRectInVideo();
-        const size = CONFIG.captureSize;
-        captureCanvas.width = size;
-        captureCanvas.height = size;
-
-        captureCtx.clearRect(0, 0, size, size);
-        captureCtx.save();
-        captureCtx.setTransform(-1, 0, 0, 1, size, 0);
-        captureCtx.drawImage(video, r.sx, r.sy, r.sw, r.sh, 0, 0, size, size);
-        captureCtx.restore();
-
-        const image = new Image();
-        image.onload = () => {
-          const displayedGuide = guide.getBoundingClientRect();
-          const initialSize = Math.min(displayedGuide.width * 0.86, 320);
-          stamps.push({
-            image,
-            x: displayedGuide.left + displayedGuide.width / 2,
-            y: displayedGuide.top + displayedGuide.height / 2,
-            width: initialSize,
-            height: initialSize,
-            vx: (Math.random() - 0.5) * 18,
-            vy: 22 + Math.random() * 12,
-            gravity: 12 + Math.random() * 8,
-            angle: (Math.random() - 0.5) * 0.18,
-            angularVelocity: (Math.random() - 0.5) * 0.24,
-            phase: Math.random() * Math.PI * 2,
-            flutter: 16 + Math.random() * 18,
-            flutterSpeed: 1.2 + Math.random() * 1.3,
-            age: 0,
-            opacity: 1
-          });
-
-          if (stamps.length > CONFIG.maxStamps) stamps.shift();
-        };
-        image.src = captureCanvas.toDataURL('image/jpeg', 0.9);
-
-        lastCaptureTime = performance.now();
-        flash.classList.remove('on');
-        void flash.offsetWidth;
-        flash.classList.add('on');
-        guide.classList.remove('ready');
-        status.textContent = 'スタンプしました。次の絵柄を準備してください。';
-      }
-
-      function drawStamp(stamp, time, dt) {
-        stamp.age += dt;
-        stamp.vy += stamp.gravity * dt;
-        stamp.y += stamp.vy * dt;
-        stamp.x += stamp.vx * dt + Math.sin(time * stamp.flutterSpeed + stamp.phase) * stamp.flutter * dt;
-        stamp.angle += stamp.angularVelocity * dt + Math.sin(time * 1.7 + stamp.phase) * 0.012;
-
-        const squash = 0.82 + Math.abs(Math.cos(time * stamp.flutterSpeed + stamp.phase)) * 0.18;
-        const shadow = Math.max(6, 18 * squash);
-
-        ctx.save();
-        ctx.translate(stamp.x, stamp.y);
-        ctx.rotate(stamp.angle);
-        ctx.scale(squash, 1);
-        ctx.globalAlpha = stamp.opacity;
-        ctx.shadowColor = 'rgba(0,0,0,.28)';
-        ctx.shadowBlur = shadow;
-        ctx.shadowOffsetY = 8;
-        ctx.drawImage(stamp.image, -stamp.width / 2, -stamp.height / 2, stamp.width, stamp.height);
-        ctx.restore();
-      }
-
-      let previousAnimationTime = performance.now();
-      function animate(now) {
-        const dt = Math.min((now - previousAnimationTime) / 1000, 0.04);
-        previousAnimationTime = now;
-        ctx.clearRect(0, 0, innerWidth, innerHeight);
-
-        const time = now / 1000;
-        for (const stamp of stamps) drawStamp(stamp, time, dt);
-        stamps = stamps.filter(stamp => stamp.y - stamp.height / 2 < innerHeight + 80 && stamp.age < 30);
-
-        animationId = requestAnimationFrame(animate);
-      }
-
-      startButton.addEventListener('click', startCamera);
-      captureButton.addEventListener('click', captureStamp);
-      clearButton.addEventListener('click', () => { stamps = []; });
-
-      window.addEventListener('resize', resizeScene);
-      window.addEventListener('beforeunload', stopCamera);
-
-      resizeScene();
-      animationId = requestAnimationFrame(animate);
-    })();
-  </script>
+  startButton.addEventListener('click',startCamera); captureButton.addEventListener('click',captureStamp); clearButton.addEventListener('click',()=>stamps=[]);
+  window.addEventListener('resize',resizeScene); window.addEventListener('beforeunload',stopCamera);
+  resizeScene();requestAnimationFrame(animate);
+})();
+</script>
 </body>
 </html>
